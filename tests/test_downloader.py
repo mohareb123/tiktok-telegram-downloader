@@ -1,0 +1,52 @@
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from app.downloader import DownloadError, download_media, is_tiktok_url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.tiktok.com/@user/video/123",
+        "https://vm.tiktok.com/ZM123/",
+        "https://m.tiktok.com/h5/share/item/123.html",
+    ],
+)
+def test_accepts_tiktok_urls(url):
+    assert is_tiktok_url(url)
+
+
+@pytest.mark.parametrize("url", ["", "https://example.com/video", "javascript://tiktok.com"])
+def test_rejects_non_tiktok_urls(url):
+    assert not is_tiktok_url(url)
+
+
+def test_rejects_invalid_url_before_network(tmp_path: Path):
+    with pytest.raises(DownloadError, match="ليس رابط TikTok"):
+        download_media("https://example.com/x", tmp_path)
+
+
+def test_converts_image_download_to_png(tmp_path: Path):
+    class FakeYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=True):
+            from PIL import Image
+            output = Path(self.options["outtmpl"].replace("%(id)s.%(ext)s", "abc.jpg"))
+            Image.new("RGB", (2, 2), "red").save(output)
+            return {"id": "abc", "title": "Test image"}
+
+    with patch("app.downloader.yt_dlp.YoutubeDL", FakeYDL):
+        result = download_media("https://www.tiktok.com/@u/photo/1", tmp_path)
+    assert result.media_type == "image"
+    assert result.path.suffix == ".png"
+    assert result.path.exists()

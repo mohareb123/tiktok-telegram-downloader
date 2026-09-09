@@ -1,0 +1,7 @@
+python-telegram-bot==22.5
+yt-dlp==2025.9.5
+Pillow==11.3.0
+python-dotenv==1.1.1
+pytest==8.4.2
+pytest-asyncio==1.1.0
+ruff==0.13.0
