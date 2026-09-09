@@ -41,6 +41,7 @@ def test_converts_image_download_to_png(tmp_path: Path):
 
         def extract_info(self, url, download=True):
             from PIL import Image
+
             output = Path(self.options["outtmpl"].replace("%(id)s.%(ext)s", "abc.jpg"))
             Image.new("RGB", (2, 2), "red").save(output)
             return {"id": "abc", "title": "Test image"}
@@ -50,3 +51,28 @@ def test_converts_image_download_to_png(tmp_path: Path):
     assert result.media_type == "image"
     assert result.path.suffix == ".png"
     assert result.path.exists()
+
+
+def test_extracts_audio_download_to_mp3(tmp_path: Path):
+    class FakeYDL:
+        def __init__(self, options):
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=True):
+            assert self.options["format"] == "bestaudio/best"
+            assert self.options["postprocessors"][0]["preferredcodec"] == "mp3"
+            output = Path(self.options["outtmpl"].replace("%(id)s.%(ext)s", "abc.mp3"))
+            output.write_bytes(b"fake mp3")
+            return {"id": "abc", "title": "Original sound"}
+
+    with patch("app.downloader.yt_dlp.YoutubeDL", FakeYDL):
+        result = download_media("https://www.tiktok.com/@u/video/1", tmp_path, media_kind="audio")
+    assert result.media_type == "audio"
+    assert result.path.suffix == ".mp3"
+    assert result.path.read_bytes() == b"fake mp3"

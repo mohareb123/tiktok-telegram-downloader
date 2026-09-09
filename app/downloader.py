@@ -41,10 +41,14 @@ def _safe_title(value: str) -> str:
     return (cleaned[:80] or "tiktok_media").strip()
 
 
-def download_media(url: str, output_dir: Path, timeout: int = 120) -> DownloadedMedia:
-    """Download a TikTok video or image post into output_dir."""
+def download_media(
+    url: str, output_dir: Path, timeout: int = 120, media_kind: str = "auto"
+) -> DownloadedMedia:
+    """Download a TikTok video/image or extract its original audio as MP3."""
     if not is_tiktok_url(url):
         raise DownloadError("الرابط ليس رابط TikTok صالحًا")
+    if media_kind not in {"auto", "audio"}:
+        raise DownloadError("نوع الوسائط غير مدعوم")
     output_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix="download-", dir=output_dir))
     try:
@@ -55,9 +59,23 @@ def download_media(url: str, output_dir: Path, timeout: int = 120) -> Downloaded
             "no_warnings": True,
             "socket_timeout": timeout,
             "retries": 2,
-            "merge_output_format": "mp4",
-            "format": "best[ext=mp4]/best",
         }
+        if media_kind == "audio":
+            options.update(
+                {
+                    "format": "bestaudio/best",
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",
+                            "preferredquality": "192",
+                        }
+                    ],
+                }
+            )
+        else:
+            options.update({"merge_output_format": "mp4", "format": "best[ext=mp4]/best"})
+
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
             title = _safe_title(info.get("title") or info.get("id") or "tiktok_media")
@@ -66,6 +84,10 @@ def download_media(url: str, output_dir: Path, timeout: int = 120) -> Downloaded
         if not files:
             raise DownloadError("لم يتم العثور على ملف وسائط بعد التنزيل")
         source = max(files, key=lambda p: p.stat().st_size)
+        if media_kind == "audio":
+            destination = output_dir / f"{title}.mp3"
+            shutil.move(str(source), destination)
+            return DownloadedMedia(destination, "audio", title)
         if source.suffix.lower() in {".jpg", ".jpeg", ".webp", ".heic"}:
             destination = output_dir / f"{title}.png"
             with Image.open(source) as image:

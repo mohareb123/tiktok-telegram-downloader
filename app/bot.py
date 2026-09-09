@@ -34,21 +34,32 @@ def _config() -> tuple[str, int, int, float]:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "مرحبًا! أرسل رابط TikTok وسأعيد الفيديو MP4 أو الصور PNG.\n"
+        "لاستخراج الصوت MP3 استخدم: /mp3 ثم الرابط.\n"
         "استخدم /help للمساعدة."
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "أرسل رابط TikTok عام فقط. يدعم البوت فيديوهات MP4 ومنشورات الصور PNG. "
+        "أرسل رابط TikTok عام للحصول على MP4 أو PNG.\n"
+        "لاستخراج الموسيقى/الصوت الأصلي بصيغة MP3:\n"
+        "1. أرسل /mp3 ثم مسافة ثم الرابط\n"
+        "2. أو أرسل الرابط متبوعًا بكلمة mp3\n"
         "قد تفشل الروابط الخاصة أو المحمية أو المحذوفة."
     )
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message or not update.message.text:
+async def audio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
         return
-    url_match = URL_RE.search(update.message.text.strip())
+    text = " ".join(context.args).strip()
+    await process_url(update, context, text, media_kind="audio")
+
+
+async def process_url(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, media_kind: str = "auto"
+) -> None:
+    url_match = URL_RE.search(text)
     if not url_match or not is_tiktok_url(url_match.group(0)):
         await update.message.reply_text("أرسل رابط TikTok صالحًا يبدأ بـ https://www.tiktok.com/")
         return
@@ -65,14 +76,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     output_dir = Path("/tmp/tiktok-downloader") / str(update.effective_user.id)
     try:
         _, max_mb, timeout, _ = _config()
-        media = await asyncio.to_thread(download_media, url_match.group(0), output_dir, timeout)
+        media = await asyncio.to_thread(
+            download_media, url_match.group(0), output_dir, timeout, media_kind
+        )
         if media.path.stat().st_size > max_mb * 1024 * 1024:
             raise DownloadError(f"حجم الملف أكبر من الحد المسموح ({max_mb} MB)")
         with media.path.open("rb") as handle:
             if media.media_type == "video":
                 await update.message.reply_video(video=handle, caption=media.title[:1024])
-            else:
+            elif media.media_type == "image":
                 await update.message.reply_photo(photo=handle, caption=media.title[:1024])
+            else:
+                await update.message.reply_audio(audio=handle, title=media.title[:64])
         await status.delete()
     except DownloadError as exc:
         await status.edit_text(str(exc))
@@ -86,10 +101,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             output_dir.rmdir()
 
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip()
+    media_kind = "audio" if re.search(r"(?:^|\s)mp3(?:\s|$)", text, re.IGNORECASE) else "auto"
+    await process_url(update, context, text, media_kind)
+
+
 def build_application(token: str) -> Application:
     application = Application.builder().token(token).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("mp3", audio_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return application
 
