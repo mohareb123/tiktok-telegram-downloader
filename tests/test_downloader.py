@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.downloader import DownloadError, download_media, is_tiktok_url
+from app.downloader import DownloadError, _ydl_options, download_media, is_tiktok_url
 
 
 @pytest.mark.parametrize(
@@ -76,3 +76,14 @@ def test_extracts_audio_download_to_mp3(tmp_path: Path):
     assert result.media_type == "audio"
     assert result.path.suffix == ".mp3"
     assert result.path.read_bytes() == b"fake mp3"
+
+
+def test_browser_impersonation_and_authorized_cookie_file(tmp_path: Path, monkeypatch):
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("# Netscape HTTP Cookie File\n")
+    monkeypatch.setenv("TIKTOK_IMPERSONATE", "chrome")
+    monkeypatch.setenv("TIKTOK_COOKIE_FILE", str(cookie_file))
+    options = _ydl_options(tmp_path, 30, "audio")
+    assert options["impersonate"] == "chrome"
+    assert options["cookiefile"] == str(cookie_file)
+    assert options["http_headers"]["User-Agent"].startswith("Mozilla/5.0")
