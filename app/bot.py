@@ -17,7 +17,10 @@ from telegram.ext import (
     filters,
 )
 
-from .downloader import DownloadError, download_media, is_tiktok_url
+try:
+    from .downloader import DownloadError, download_media, is_tiktok_url
+except ImportError:  # Support hosts that launch this file directly.
+    from downloader import DownloadError, download_media, is_tiktok_url
 
 LOGGER = logging.getLogger(__name__)
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
