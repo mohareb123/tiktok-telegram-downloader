@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -19,8 +21,27 @@ from telegram.ext import (
 
 try:
     from .downloader import DownloadError, download_media, is_tiktok_url
-except ImportError:  # Support hosts that launch this file directly.
-    from downloader import DownloadError, download_media, is_tiktok_url
+except ImportError:  # Support hosts that launch or relocate this file directly.
+    downloader_module = None
+    search_roots = [
+        Path.cwd(),
+        Path.cwd() / "tiktok-telegram-downloader",
+        Path(__file__).resolve().parent,
+    ]
+    search_roots.extend(Path.cwd().parents)
+    search_roots.extend(Path(__file__).resolve().parents)
+    for root in dict.fromkeys(search_roots):
+        if (root / "app" / "downloader.py").is_file():
+            sys.path.insert(0, str(root))
+            downloader_module = importlib.import_module("app.downloader")
+            break
+    if downloader_module is None:
+        raise ImportError(
+            "لم يتم العثور على app/downloader.py؛ شغّل الملف من مجلد المشروع الكامل"
+        ) from None
+    DownloadError = downloader_module.DownloadError
+    download_media = downloader_module.download_media
+    is_tiktok_url = downloader_module.is_tiktok_url
 
 LOGGER = logging.getLogger(__name__)
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
@@ -130,3 +151,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     build_application(token).run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
