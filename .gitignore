@@ -10,3 +10,6 @@ __pycache__/
 # downloaded media
 *.mp4
 *.png
+
+# private TikTok session cookies (never commit)
+tiktok-cookies.txt
